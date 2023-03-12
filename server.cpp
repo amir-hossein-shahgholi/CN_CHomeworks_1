@@ -14,6 +14,31 @@
 #include <regex>
 #include <sstream>
 
+std::map<int, std::string> error_dict;
+void set_errors(){
+    error_dict[101] = "Err -> 101: The desired room was not found ";
+    error_dict[102] = "Err -> 102: Your reservation was not found";
+    error_dict[104] = "Err -> 104: Successfully added.";
+    error_dict[105] = "Err -> 105: Successfully modified.";
+    error_dict[106] = "Err -> 106: Successfully deleted.";
+    error_dict[108] = "Err -> 108: Your account balance is not enough ";
+    error_dict[109] = "Err -> 109: The room capacity is full";
+    error_dict[110] = "Err -> 110: Successfully done. ";
+    error_dict[111] = "Err -> 111: This room already exists";
+    error_dict[201] = "Err -> 201: User logged out successfully.";
+    error_dict[230] = "Err -> 230: User logged in. ";
+    error_dict[231] = "Err -> 231: User successfully signed up.";
+    error_dict[311] = "Err -> 311: User Signed up. Enter your password, purse, phone and address.";
+    error_dict[312] = "Err -> 312: Information was changed successfully.";
+    error_dict[401] = "Err -> 401: Invalid value!";
+    error_dict[403] = "Err -> 403: Access denied!";
+    error_dict[412] = "Err -> 412: Invalid capacity value!";
+    error_dict[413] = "Err -> 413: successfully Leaving.";
+    error_dict[430] = "Err -> 430: Invalid username or password.";
+    error_dict[451] = "Err -> 451: User already existed! ";
+    error_dict[503] = "Err -> 503: Bad Sequence of commands.";
+}
+
 class User {
 public:
     int id;
@@ -70,10 +95,11 @@ void read_config_file(std::string* addr, int* port){
 }
 
 void raise_error(int error_no, int fd=0){
+    std::string error_msg = error_dict[error_no];
     if (fd == 0){
-        printf("%d\n", error_no);
+        printf("%s\n", error_msg.c_str());
     }else{
-        write(fd, "%d", error_no);
+        write(fd, error_msg.c_str(), error_msg.size());
     }
 }
 
@@ -211,7 +237,17 @@ std::string set_time(){
     memset(buffer, 0, 2048);
     return " ";
 }
+
+// void handle_commands(std::vector<std::string> values){
+//     if (values[0] == "signin"){
+
+//     }else if(values[0] == "signup"){
+
+//     }
+// }
+
 int main(int argc, char const *argv[]) {
+    set_errors();
     int server_fd, new_socket, max_sd;
     char buffer[2048] = {0};
     fd_set master_set, working_set;
