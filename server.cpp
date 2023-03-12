@@ -26,10 +26,6 @@ public:
 std::vector<User> users;
 User null_user;
 
-void print_message(int msg_code){
-    printf("%d\n", msg_code);
-}
-
 int setupServer(int port, std::string addr) {
     struct sockaddr_in address;
     int server_fd;
@@ -104,7 +100,7 @@ void print_users_info(){
 void sign_in(std::string username, std::string password){
     for (const auto& user : users) {
         if (user.username == username && user.password == password){
-            print_message(203);
+            raise_error(203);
             return;
         }
     }
@@ -171,7 +167,7 @@ User user_signup(std::string username){
         }
     }
     User new_user;
-    print_message(311);
+    raise_error(311);
     new_user.username = username;
     return new_user;
 }
@@ -179,7 +175,7 @@ User user_signup(std::string username){
 void save_user (User user){
     user.isAdmin = "false";
     users.push_back(user);
-    print_message(231);
+    raise_error(231);
 }
 
 int main(int argc, char const *argv[]) {
