@@ -12,6 +12,7 @@
 #include "req/json.h"
 #include <cstring>
 #include <regex>
+#include <sstream>
 
 class User {
 public:
@@ -25,10 +26,6 @@ public:
 };
 std::vector<User> users;
 User null_user;
-
-void print_message(int msg_code){
-    printf("%d\n", msg_code);
-}
 
 int setupServer(int port, std::string addr) {
     struct sockaddr_in address;
@@ -72,20 +69,21 @@ void read_config_file(std::string* addr, int* port){
     }
 }
 
-void raise_error(int error_no){
-    printf("%d\n", error_no);
+void raise_error(int error_no, int fd=0){
+    if (fd == 0){
+        printf("%d\n", error_no);
+    }else{
+        write(fd, "%d", error_no);
+    }
 }
 
-char* validate_date_time(char buff[1024]){
-    if (strlen(buff) == 1){
-        raise_error(503);
-    }
-    std::regex pattern("^(\\d{2})-(\\d{2})-(\\d{4})\n");
+bool is_valid_date_time(std::string buff){
+    std::regex pattern("^(\\d{2})-(\\d{2})-(\\d{4})");
     if (regex_match(buff, pattern)){
-        return buff;
+        return true;
     }
     raise_error(401);
-    return {0};
+    return false;
 }
 
 void print_users_info(){
@@ -104,7 +102,7 @@ void print_users_info(){
 void sign_in(std::string username, std::string password){
     for (const auto& user : users) {
         if (user.username == username && user.password == password){
-            print_message(203);
+            raise_error(203);
             return;
         }
     }
@@ -171,7 +169,7 @@ User user_signup(std::string username){
         }
     }
     User new_user;
-    print_message(311);
+    raise_error(311);
     new_user.username = username;
     return new_user;
 }
@@ -179,18 +177,56 @@ User user_signup(std::string username){
 void save_user (User user){
     user.isAdmin = "false";
     users.push_back(user);
-    print_message(231);
+    raise_error(231);
 }
 
+std::vector<std::string> command_serializer(char buffer[2048]){
+    std::vector<std::string> values;
+    std::stringstream stream(buffer);
+    std::string temp;
+    while (stream >> temp) {
+        values.push_back(temp);
+    }
+    return values;
+}
+
+std::string set_time(){
+    char buffer[2048] = {0};
+    read(0, buffer, 2048);
+    std::vector<std::string> values = command_serializer(buffer);
+    if (values.size() != 2){
+        raise_error(503, 0);
+        memset(buffer, 0, 2048);
+        return " ";
+    }
+    if (values[0] != "setTime"){
+        raise_error(503, 0);
+        memset(buffer, 0, 2048);
+        return " ";
+    }
+    if (is_valid_date_time(values[1])){
+        memset(buffer, 0, 2048);
+        return values[1];
+    }
+    memset(buffer, 0, 2048);
+    return " ";
+}
 int main(int argc, char const *argv[]) {
     int server_fd, new_socket, max_sd;
-    char buffer[1024] = {0};
+    char buffer[2048] = {0};
     fd_set master_set, working_set;
     std::string addr;
     int port;
     std::string date_time;
     read_config_file(&addr, &port);
     create_users();
+    printf("Please set start time with command 'setTime', Pay attention to the date format. (EX. -setTime 10-10-2010)\n");
+    while (1){
+        date_time = set_time();
+        if(date_time != " "){
+            break;
+        }
+    }
     server_fd = setupServer(port, addr);
     FD_ZERO(&master_set);
     max_sd = server_fd;
