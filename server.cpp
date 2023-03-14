@@ -15,7 +15,7 @@
 #include <sstream>
 
 std::map<int, std::string> error_dict;
-
+std::string menu;
 class User
 {
 public:
@@ -32,30 +32,35 @@ User null_user;
 
 void init_values()
 {
-    error_dict[101] = "Err -> 101: The desired room was not found ";
-    error_dict[102] = "Err -> 102: Your reservation was not found";
-    error_dict[104] = "Err -> 104: Successfully added.";
-    error_dict[105] = "Err -> 105: Successfully modified.";
-    error_dict[106] = "Err -> 106: Successfully deleted.";
-    error_dict[108] = "Err -> 108: Your account balance is not enough ";
-    error_dict[109] = "Err -> 109: The room capacity is full";
-    error_dict[110] = "Err -> 110: Successfully done. ";
-    error_dict[111] = "Err -> 111: This room already exists";
-    error_dict[201] = "Err -> 201: User logged out successfully.";
-    error_dict[230] = "Err -> 230: User logged in. ";
-    error_dict[231] = "Err -> 231: User successfully signed up.";
-    error_dict[311] = "Err -> 311: User Signed up. Enter your password, purse, phone and address.";
-    error_dict[312] = "Err -> 312: Information was changed successfully.";
-    error_dict[401] = "Err -> 401: Invalid value!";
-    error_dict[403] = "Err -> 403: Access denied!";
-    error_dict[412] = "Err -> 412: Invalid capacity value!";
-    error_dict[413] = "Err -> 413: successfully Leaving.";
-    error_dict[430] = "Err -> 430: Invalid username or password.";
-    error_dict[451] = "Err -> 451: User already existed! ";
-    error_dict[503] = "Err -> 503: Bad Sequence of commands.";
+    error_dict[101] = "Err -> 101: The desired room was not found\n";
+    error_dict[102] = "Err -> 102: Your reservation was not found\n";
+    error_dict[104] = "Err -> 104: Successfully added.\n";
+    error_dict[105] = "Err -> 105: Successfully modified.\n";
+    error_dict[106] = "Err -> 106: Successfully deleted.\n";
+    error_dict[108] = "Err -> 108: Your account balance is not enough\n";
+    error_dict[109] = "Err -> 109: The room capacity is full\n";
+    error_dict[110] = "Err -> 110: Successfully done.\n";
+    error_dict[111] = "Err -> 111: This room already exists\n";
+    error_dict[201] = "Err -> 201: User logged out successfully.\n";
+    error_dict[230] = "Err -> 230: User logged in.\n";
+    error_dict[231] = "Err -> 231: User successfully signed up.\n";
+    error_dict[311] = "Err -> 311: User Signed up. Enter your password, purse, phone and address.\n";
+    error_dict[312] = "Err -> 312: Information was changed successfully.\n";
+    error_dict[401] = "Err -> 401: Invalid value!\n";
+    error_dict[403] = "Err -> 403: Access denied!\n";
+    error_dict[412] = "Err -> 412: Invalid capacity value!\n";
+    error_dict[413] = "Err -> 413: successfully Leaving.\n";
+    error_dict[430] = "Err -> 430: Invalid username or password.\n";
+    error_dict[451] = "Err -> 451: User already existed!\n";
+    error_dict[503] = "Err -> 503: Bad Sequence of commands.\n";
     null_user.id = -1;
+    menu = "1. View user information\n2. view all users\n3. View rooms information\n4. Booking\n5. Canceling\n6. pass day\n7. Edit information\n8. Leaving room\n9. Rooms\n0. Logout\n";
 }
 
+void send_menu(int fd)
+{
+    send(fd, menu.c_str(), menu.size(), 0);
+}
 class UserStatus
 {
 public:
@@ -178,6 +183,7 @@ void sign_in(std::string username, std::string password, int fd_id)
                     user_status.is_login = true;
                     user_status.user_id = user.id;
                 }
+                send_menu(fd_id);
                 printf("User: %s logged in.\n", user.username.c_str());
             }
             return;
@@ -333,12 +339,15 @@ void handle_commands(std::vector<std::string> values, int fd_id)
                     user_status.temp_info.id = last_user_id() + 1;
                     users.push_back(user_status.temp_info);
                     user_status.signup_state = -1;
+                    user_status.is_login = true;
                     raise_error(231, fd_id);
+                    send_menu(fd_id);
                 }
                 return;
             }
         }
     }
+
     if (values[0] == "signin")
     {
         if (values.size() == 3)
