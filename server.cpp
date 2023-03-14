@@ -54,19 +54,68 @@ void raise_error(int error_no, int fd)
     }
 }
 
+User find_user_by_fd(int fd)
+{
+    for (const auto &user_status : users_status)
+    {
+        if (user_status.fd_id == fd)
+        {
+            for (const auto &user : users)
+            {
+                if (user.id == user_status.user_id)
+                {
+                    return user;
+                }
+            }
+        }
+    }
+    return null_user;
+}
+
+bool is_admin(int fd)
+{
+    User temp = find_user_by_fd(fd);
+    if (temp.isAdmin == "true")
+        return true;
+    return false;
+}
+
 void send_user_information(int fd)
 {
     std::string message = "";
-    for (const auto &user : users)
-    {
-        message += "User ID: " + std::to_string(user.id) + "\n";
-        message += "Username: " + user.username + "\n";
-        message += "Is Admin: " + user.isAdmin + "\n";
-        message += "Phone Number: " + user.phoneNumber + "\n";
-        message += "Address: " + user.address + "\n\n";
-    }
+    User user = find_user_by_fd(fd);
 
+    message += "User ID: " + std::to_string(user.id) + "\n";
+    message += "Username: " + user.username + "\n";
+    message += "Password: " + user.password + "\n";
+    message += "Purse: " + user.purse + "\n";
+    message += "Is Admin: " + user.isAdmin + "\n";
+    message += "Phone Number: " + user.phoneNumber + "\n";
+    message += "Address: " + user.address + "\n\n";
     send(fd, message.c_str(), message.size(), 0);
+}
+
+void view_all_users(int fd)
+{
+    if (is_admin(fd))
+    {
+        std::string message = "";
+        for (const auto &user : users)
+        {
+            message += "User ID: " + std::to_string(user.id) + "\n";
+            message += "Username: " + user.username + "\n";
+            message += "Purse: " + user.purse + "\n";
+            message += "Is Admin: " + user.isAdmin + "\n";
+            message += "Phone Number: " + user.phoneNumber + "\n";
+            message += "Address: " + user.address + "\n\n";
+        }
+
+        send(fd, message.c_str(), message.size(), 0);
+    }
+    else
+    {
+        raise_error(403, fd);
+    }
 }
 
 void handle_menu_commands(std::vector<std::string> values, int fd_id)
@@ -82,6 +131,7 @@ void handle_menu_commands(std::vector<std::string> values, int fd_id)
         send_user_information(fd_id);
         break;
     case 2:
+        view_all_users(fd_id);
         break;
     case 3:
         break;
