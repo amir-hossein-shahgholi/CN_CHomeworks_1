@@ -13,7 +13,9 @@
 #include <cstring>
 #include <regex>
 #include <sstream>
+#include <ctime>
 
+std::string date_time;
 std::map<int, std::string> error_dict;
 std::string menu;
 struct Reservator
@@ -58,6 +60,33 @@ public:
     bool menu_state;
 };
 std::vector<UserStatus> users_status;
+
+std::tm parse_date(const std::string &date_string)
+{
+    std::tm date = {};
+    std::stringstream ss(date_string);
+    ss >> date.tm_mday;
+    ss.ignore();
+    ss >> date.tm_mon;
+    ss.ignore();
+    ss >> date.tm_year;
+    date.tm_mon -= 1;
+    date.tm_year -= 1900;
+    return date;
+}
+
+bool compare_dates(const std::string &date_string1, const std::string &date_string2)
+{
+    std::tm date1 = parse_date(date_string1);
+    std::tm date2 = parse_date(date_string2);
+    std::time_t time1 = std::mktime(&date1);
+    std::time_t time2 = std::mktime(&date2);
+    if (time1 == -1 || time2 == -1)
+    {
+        return false;
+    }
+    return (time1 <= time2);
+}
 
 void read_rooms_information()
 {
@@ -162,38 +191,6 @@ void view_all_users(int fd)
     else
     {
         raise_error(403, fd);
-    }
-}
-
-void handle_menu_commands(std::vector<std::string> values, int fd_id)
-{
-    if ((values[0][0] < '0') || (values[0][0] > '9') || (values[0].size() > 1) || (values.size() != 1))
-        raise_error(503, fd_id);
-    int num = values[0][0] - '0';
-    switch (num)
-    {
-    case 0:
-        break;
-    case 1:
-        send_user_information(fd_id);
-        break;
-    case 2:
-        view_all_users(fd_id);
-        break;
-    case 3:
-        break;
-    case 4:
-        break;
-    case 5:
-        break;
-    case 6:
-        break;
-    case 7:
-        break;
-    case 8:
-        break;
-    case 9:
-        break;
     }
 }
 
@@ -455,6 +452,105 @@ std::string set_time()
     return " ";
 }
 
+void add_new_user_status(int socket_id)
+{
+    UserStatus temp;
+    temp.fd_id = socket_id;
+    temp.signup_state = -1;
+    temp.menu_state = false;
+    temp.is_login = false;
+    users_status.push_back(temp);
+}
+
+void send_just_rooms(int fd)
+{
+    std::string message = "";
+    for (const auto &room : rooms)
+    {
+        message += "Number: " + room.number + "\n";
+        message += "Status: " + std::to_string(room.status) + "\n";
+        message += "Price: " + std::to_string(room.price) + "\n";
+        message += "Max Capacity: " + std::to_string(room.maxCapacity) + "\n";
+        message += "Capacity: " + std::to_string(room.capacity) + "\n\n";
+    }
+
+    send(fd, message.c_str(), message.size(), 0);
+}
+
+void send_rooms_with_detail(int fd)
+{
+    std::string message = "";
+    for (const auto &room : rooms)
+    {
+        message += "Number: " + room.number + "\n";
+        message += "Status: " + std::to_string(room.status) + "\n";
+        message += "Price: " + std::to_string(room.price) + "\n";
+        message += "Max Capacity: " + std::to_string(room.maxCapacity) + "\n";
+        message += "Capacity: " + std::to_string(room.capacity) + "\n";
+        if (room.maxCapacity != room.capacity)
+        {
+            message += "Users:\n";
+            for (const auto &reservator : room.reservators)
+            {
+                if (compare_dates(reservator.reserveDate, date_time) && compare_dates(date_time, reservator.checkoutDate))
+                {
+                    message += "User ID: " + std::to_string(reservator.id) + "\n";
+                    message += "Number of beds: " + std::to_string(reservator.numOfBeds) + "\n";
+                    message += "Reservation date: " + reservator.reserveDate + "\n";
+                    message += "Checkout date: " + reservator.checkoutDate + "\n\n";
+                }
+            }
+        }
+    }
+
+    send(fd, message.c_str(), message.size(), 0);
+}
+
+void view_rooms_information(int fd)
+{
+    if (is_admin(fd))
+    {
+        send_rooms_with_detail(fd);
+    }
+    else
+    {
+        send_just_rooms(fd);
+    }
+}
+
+void handle_menu_commands(std::vector<std::string> values, int fd_id)
+{
+    if ((values[0][0] < '0') || (values[0][0] > '9') || (values[0].size() > 1) || (values.size() != 1))
+        raise_error(503, fd_id);
+    int num = values[0][0] - '0';
+    switch (num)
+    {
+    case 0:
+        break;
+    case 1:
+        send_user_information(fd_id);
+        break;
+    case 2:
+        view_all_users(fd_id);
+        break;
+    case 3:
+        view_rooms_information(fd_id);
+        break;
+    case 4:
+        break;
+    case 5:
+        break;
+    case 6:
+        break;
+    case 7:
+        break;
+    case 8:
+        break;
+    case 9:
+        break;
+    }
+}
+
 void handle_commands(std::vector<std::string> values, int fd_id)
 {
     for (auto &user_status : users_status)
@@ -510,16 +606,6 @@ void handle_commands(std::vector<std::string> values, int fd_id)
     }
 }
 
-void add_new_user_status(int socket_id)
-{
-    UserStatus temp;
-    temp.fd_id = socket_id;
-    temp.signup_state = -1;
-    temp.menu_state = false;
-    temp.is_login = false;
-    users_status.push_back(temp);
-}
-
 int main(int argc, char const *argv[])
 {
     init_values();
@@ -528,7 +614,6 @@ int main(int argc, char const *argv[])
     fd_set master_set, working_set;
     std::string addr;
     int port;
-    std::string date_time;
     read_config_file(&addr, &port);
     create_users();
     read_rooms_information();
