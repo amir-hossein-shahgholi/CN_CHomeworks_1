@@ -19,6 +19,7 @@ std::string date_time;
 fd_set master_set, working_set;
 std::map<int, std::string> error_dict;
 std::string menu;
+std::string edit_rooms_menu;
 struct Reservator
 {
     int id;
@@ -59,6 +60,7 @@ public:
     int signup_state;
     User temp_info;
     bool menu_state;
+    bool edit_room_state;
 };
 std::vector<UserStatus> users_status;
 
@@ -74,6 +76,16 @@ std::tm parse_date(const std::string &date_string)
     date.tm_mon -= 1;
     date.tm_year -= 1900;
     return date;
+}
+
+bool is_numeric(std::string str)
+{
+    for (char c : str)
+    {
+        if (!isdigit(c))
+            return false;
+    }
+    return true;
 }
 
 bool compare_dates(const std::string &date_string1, const std::string &date_string2)
@@ -219,7 +231,13 @@ void init_values()
     error_dict[451] = "Err -> 451: User already existed!\n";
     error_dict[503] = "Err -> 503: Bad Sequence of commands.\n";
     null_user.id = -1;
+    edit_rooms_menu = "Options: add, modify and remove\n";
     menu = "1. View user information\n2. view all users\n3. View rooms information\n4. Booking\n5. Canceling\n6. pass day\n7. Edit information\n8. Leaving room\n9. Rooms\n0. Logout\n";
+}
+
+void send_edit_rooms_menu(int fd)
+{
+    send(fd, edit_rooms_menu.c_str(), edit_rooms_menu.size(), 0);
 }
 
 void send_menu(int fd)
@@ -460,6 +478,7 @@ void add_new_user_status(int socket_id)
     temp.signup_state = -1;
     temp.menu_state = false;
     temp.is_login = false;
+    temp.edit_room_state = false;
     users_status.push_back(temp);
 }
 
@@ -493,6 +512,25 @@ void logout(int fd)
     raise_error(201, fd);
     close(fd);
     FD_CLR(fd, &master_set);
+}
+
+void edit_rooms_mode(int fd)
+{
+    if (is_admin(fd))
+    {
+        for (auto &user_status : users_status)
+        {
+            if (user_status.fd_id == fd)
+            {
+                user_status.edit_room_state = true;
+                send_edit_rooms_menu(fd);
+            }
+        }
+    }
+    else
+    {
+        raise_error(403, fd);
+    }
 }
 
 void send_rooms_with_detail(int fd)
@@ -566,7 +604,126 @@ void handle_menu_commands(std::vector<std::string> values, int fd_id)
     case 8:
         break;
     case 9:
+        edit_rooms_mode(fd_id);
         break;
+    }
+}
+
+bool is_room_number_exist(std::string room_number)
+{
+    for (const auto &room : rooms)
+        if (room.number == room_number)
+            return true;
+    return false;
+}
+
+void add_new_room(std::string room_num, std::string maxcap, std::string price, int fd)
+{
+    if (is_numeric(maxcap) && is_numeric(price))
+    {
+        Room room;
+        room.number = room_num;
+        room.maxCapacity = stoi(maxcap);
+        room.price = stoi(price);
+        room.capacity = 0;
+        room.status = 0;
+        rooms.push_back(room);
+        raise_error(104, fd);
+    }
+    else
+    {
+        raise_error(503, fd);
+    }
+}
+
+void modify_room(std::string room_num, std::string maxcap, std::string price, int fd)
+{
+    if (is_numeric(maxcap) && is_numeric(price))
+    {
+        for (auto &room : rooms)
+            if (room.number == room_num)
+            {
+                if ((stoi(maxcap) < room.maxCapacity) && room.status == 1)
+                {
+                    raise_error(109, fd);
+                }
+                else
+                {
+                    room.maxCapacity = stoi(maxcap);
+                    room.price = stoi(price);
+                    raise_error(105, fd);
+                }
+            }
+    }
+    else
+    {
+        raise_error(503, fd);
+    }
+}
+
+void remove_room(std::string room_num, int fd)
+{
+    int index = 0;
+    for (auto &room : rooms)
+    {
+        if (room.number == room_num)
+        {
+            if (room.status == 1)
+            {
+                raise_error(109, fd);
+            }
+            else
+            {
+                rooms.erase(rooms.begin() + index);
+                raise_error(106, fd);
+            }
+        }
+        index++;
+    }
+}
+
+void handle_edit_rooms_commands(std::vector<std::string> values, int fd_id)
+{
+    if (values[0] == "add")
+    {
+        if (values.size() != 4)
+            raise_error(503, fd_id);
+        if (is_room_number_exist(values[1]))
+            raise_error(111, fd_id);
+        else
+        {
+            add_new_room(values[1], values[2], values[3], fd_id);
+        }
+    }
+    else if (values[0] == "modify")
+    {
+        if (values.size() != 4)
+            raise_error(503, fd_id);
+        if (is_room_number_exist(values[1]))
+        {
+            modify_room(values[1], values[2], values[3], fd_id);
+        }
+        else
+        {
+            raise_error(101, fd_id);
+        }
+    }
+    else if (values[0] == "remove")
+    {
+        if (values.size() != 2)
+            raise_error(503, fd_id);
+        if (is_room_number_exist(values[1]))
+        {
+            remove_room(values[1], fd_id);
+        }
+        else
+        {
+            raise_error(101, fd_id);
+        }
+    }
+    else
+    {
+        raise_error(503, fd_id);
     }
 }
 
@@ -598,6 +755,11 @@ void handle_commands(std::vector<std::string> values, int fd_id)
                     send_menu(fd_id);
                 }
                 return;
+            }
+            else if (user_status.edit_room_state)
+            { // Edit rooms commands
+                handle_edit_rooms_commands(values, fd_id);
+                user_status.edit_room_state = false;
             }
             else if (user_status.menu_state)
             { // Menu commands
@@ -660,7 +822,7 @@ int main(int argc, char const *argv[])
             {
 
                 if (i == server_fd)
-                { // new clinet
+                { // new User
                     new_socket = acceptClient(server_fd);
                     FD_SET(new_socket, &master_set);
                     if (new_socket > max_sd)
@@ -670,12 +832,12 @@ int main(int argc, char const *argv[])
                 }
 
                 else
-                { // client sending msg
+                { // User sending msg
                     int bytes_received;
                     bytes_received = recv(i, buffer, 2048, 0);
 
                     if (bytes_received == 0)
-                    { // EOF
+                    { // Connection closed
                         logout(i);
                         continue;
                     }
