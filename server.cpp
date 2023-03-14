@@ -16,6 +16,24 @@
 
 std::map<int, std::string> error_dict;
 std::string menu;
+struct Reservator
+{
+    int id;
+    int numOfBeds;
+    std::string reserveDate;
+    std::string checkoutDate;
+};
+
+struct Room
+{
+    std::string number;
+    int status;
+    int price;
+    int maxCapacity;
+    int capacity;
+    std::vector<Reservator> reservators;
+};
+std::vector<Room> rooms;
 class User
 {
 public:
@@ -40,6 +58,35 @@ public:
     bool menu_state;
 };
 std::vector<UserStatus> users_status;
+
+void read_rooms_information()
+{
+    std::ifstream ifs("RoomsInfo.json");
+    nlohmann::json j;
+    ifs >> j;
+
+    for (const auto &room : j.at("rooms"))
+    {
+        Room r;
+        r.number = room.at("number").get<std::string>();
+        r.status = room.at("status").get<int>();
+        r.price = room.at("price").get<int>();
+        r.maxCapacity = room.at("maxCapacity").get<int>();
+        r.capacity = room.at("capacity").get<int>();
+
+        for (const auto &user : room.at("users"))
+        {
+            Reservator u;
+            u.id = user.at("id").get<int>();
+            u.numOfBeds = user.at("numOfBeds").get<int>();
+            u.reserveDate = user.at("reserveDate").get<std::string>();
+            u.checkoutDate = user.at("checkoutDate").get<std::string>();
+            r.reservators.push_back(u);
+        }
+
+        rooms.push_back(r);
+    }
+}
 
 void raise_error(int error_no, int fd)
 {
@@ -484,6 +531,7 @@ int main(int argc, char const *argv[])
     std::string date_time;
     read_config_file(&addr, &port);
     create_users();
+    read_rooms_information();
     printf("Please set start time with command 'setTime', Pay attention to the date format. (EX. -setTime 10-10-2010)\n");
     while (1)
     {
