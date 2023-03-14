@@ -16,6 +16,7 @@
 #include <ctime>
 
 std::string date_time;
+fd_set master_set, working_set;
 std::map<int, std::string> error_dict;
 std::string menu;
 struct Reservator
@@ -477,6 +478,23 @@ void send_just_rooms(int fd)
     send(fd, message.c_str(), message.size(), 0);
 }
 
+void logout(int fd)
+{
+    int index = 0;
+    for (auto &user_status : users_status)
+    {
+        if (user_status.fd_id == fd)
+        {
+            users_status.erase(users_status.begin() + index);
+        }
+        index++;
+    }
+    printf("user fd = %d logged out\n", fd);
+    raise_error(201, fd);
+    close(fd);
+    FD_CLR(fd, &master_set);
+}
+
 void send_rooms_with_detail(int fd)
 {
     std::string message = "";
@@ -526,6 +544,7 @@ void handle_menu_commands(std::vector<std::string> values, int fd_id)
     switch (num)
     {
     case 0:
+        logout(fd_id);
         break;
     case 1:
         send_user_information(fd_id);
@@ -611,7 +630,6 @@ int main(int argc, char const *argv[])
     init_values();
     int server_fd, new_socket, max_sd;
     char buffer[2048] = {0};
-    fd_set master_set, working_set;
     std::string addr;
     int port;
     read_config_file(&addr, &port);
@@ -658,9 +676,7 @@ int main(int argc, char const *argv[])
 
                     if (bytes_received == 0)
                     { // EOF
-                        printf("client fd = %d closed\n", i);
-                        close(i);
-                        FD_CLR(i, &master_set);
+                        logout(i);
                         continue;
                     }
                     std::vector<std::string> values = command_serializer(buffer);
