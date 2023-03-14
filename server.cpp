@@ -68,6 +68,7 @@ void send_user_information(int fd)
 
     send(fd, message.c_str(), message.size(), 0);
 }
+
 void handle_menu_commands(std::vector<std::string> values, int fd_id)
 {
     if ((values[0][0] < '0') || (values[0][0] > '9') || (values[0].size() > 1) || (values.size() != 1))
@@ -98,6 +99,7 @@ void handle_menu_commands(std::vector<std::string> values, int fd_id)
         break;
     }
 }
+
 void init_values()
 {
     error_dict[101] = "Err -> 101: The desired room was not found\n";
@@ -255,24 +257,31 @@ void create_users()
     return;
 }
 
-User complete_user_signup(User user, std::string data, int data_type)
+User complete_user_signup(User &user, std::vector<std::string> values, int data_type)
 {
-    if (data.length() == 1)
-    {
-        data_type = -1;
-    }
+    std::string data;
+    std::string message = "";
     switch (data_type)
     {
     case 0: // PASSWORD
+        data = values[0];
         user.password = data;
         break;
     case 1: // PURSE
+        data = values[0];
         user.purse = data;
         break;
     case 2: // PHONE NUMBER
+        data = values[0];
         user.phoneNumber = data;
         break;
     case 3: // ADDRESS
+        for (const auto &str : values)
+        {
+            message += str + " ";
+        }
+        message.pop_back();
+        data = message;
         user.address = data;
         break;
     default: // Invalid
@@ -357,20 +366,22 @@ void handle_commands(std::vector<std::string> values, int fd_id)
         {
             if (user_status.signup_state != -1)
             { // Signup states.
-                if (values.size() > 1)
+                if (values.size() > 1 && user_status.signup_state != 3)
                 {
                     raise_error(503, fd_id);
                     user_status.signup_state = -1;
                     return;
                 }
-                complete_user_signup(user_status.temp_info, values[0], user_status.signup_state);
+                complete_user_signup(user_status.temp_info, values, user_status.signup_state);
                 user_status.signup_state++;
                 if (user_status.signup_state == 4)
                 {
                     user_status.temp_info.id = last_user_id() + 1;
+                    user_status.temp_info.isAdmin = "false";
                     users.push_back(user_status.temp_info);
                     user_status.signup_state = -1;
                     user_status.is_login = true;
+                    user_status.menu_state = true;
                     raise_error(231, fd_id);
                     send_menu(fd_id);
                 }
