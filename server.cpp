@@ -13,9 +13,32 @@
 #include <cstring>
 #include <regex>
 #include <sstream>
+#include <ctime>
 
+std::string date_time;
+fd_set master_set, working_set;
 std::map<int, std::string> error_dict;
+std::string menu;
+std::string edit_rooms_menu;
+std::string pass_day_message;
+struct Reservator
+{
+    int id;
+    int numOfBeds;
+    std::string reserveDate;
+    std::string checkoutDate;
+};
 
+struct Room
+{
+    std::string number;
+    int status;
+    int price;
+    int maxCapacity;
+    int capacity;
+    std::vector<Reservator> reservators;
+};
+std::vector<Room> rooms;
 class User
 {
 public:
@@ -29,33 +52,6 @@ public:
 };
 std::vector<User> users;
 User null_user;
-
-void init_values()
-{
-    error_dict[101] = "Err -> 101: The desired room was not found ";
-    error_dict[102] = "Err -> 102: Your reservation was not found";
-    error_dict[104] = "Err -> 104: Successfully added.";
-    error_dict[105] = "Err -> 105: Successfully modified.";
-    error_dict[106] = "Err -> 106: Successfully deleted.";
-    error_dict[108] = "Err -> 108: Your account balance is not enough ";
-    error_dict[109] = "Err -> 109: The room capacity is full";
-    error_dict[110] = "Err -> 110: Successfully done. ";
-    error_dict[111] = "Err -> 111: This room already exists";
-    error_dict[201] = "Err -> 201: User logged out successfully.";
-    error_dict[230] = "Err -> 230: User logged in. ";
-    error_dict[231] = "Err -> 231: User successfully signed up.";
-    error_dict[311] = "Err -> 311: User Signed up. Enter your password, purse, phone and address.";
-    error_dict[312] = "Err -> 312: Information was changed successfully.";
-    error_dict[401] = "Err -> 401: Invalid value!";
-    error_dict[403] = "Err -> 403: Access denied!";
-    error_dict[412] = "Err -> 412: Invalid capacity value!";
-    error_dict[413] = "Err -> 413: successfully Leaving.";
-    error_dict[430] = "Err -> 430: Invalid username or password.";
-    error_dict[451] = "Err -> 451: User already existed! ";
-    error_dict[503] = "Err -> 503: Bad Sequence of commands.";
-    null_user.id = -1;
-}
-
 class UserStatus
 {
 public:
@@ -64,8 +60,211 @@ public:
     int fd_id;
     int signup_state;
     User temp_info;
+    bool menu_state;
+    bool edit_room_state;
+    bool pass_day_state;
 };
 std::vector<UserStatus> users_status;
+
+std::tm parse_date(const std::string &date_string)
+{
+    std::tm date = {};
+    std::stringstream ss(date_string);
+    ss >> date.tm_mday;
+    ss.ignore();
+    ss >> date.tm_mon;
+    ss.ignore();
+    ss >> date.tm_year;
+    date.tm_mon -= 1;
+    date.tm_year -= 1900;
+    return date;
+}
+
+void pass_day(int num_of_days)
+{
+    struct tm tmDate = {0};
+    strptime(date_time.c_str(), "%d-%m-%Y", &tmDate);
+    time_t utcTime = mktime(&tmDate);
+    utcTime += num_of_days * 24 * 60 * 60;
+    tmDate = *localtime(&utcTime);
+    char dateBuffer[11];
+    strftime(dateBuffer, sizeof(dateBuffer), "%d-%m-%Y", &tmDate);
+    std::string updatedDateStr = dateBuffer;
+    date_time = updatedDateStr;
+}
+
+bool is_numeric(std::string str)
+{
+    for (char c : str)
+    {
+        if (!isdigit(c))
+            return false;
+    }
+    return true;
+}
+
+bool compare_dates(const std::string &date_string1, const std::string &date_string2)
+{
+    std::tm date1 = parse_date(date_string1);
+    std::tm date2 = parse_date(date_string2);
+    std::time_t time1 = std::mktime(&date1);
+    std::time_t time2 = std::mktime(&date2);
+    if (time1 == -1 || time2 == -1)
+    {
+        return false;
+    }
+    return (time1 <= time2);
+}
+
+void read_rooms_information()
+{
+    std::ifstream ifs("RoomsInfo.json");
+    nlohmann::json j;
+    ifs >> j;
+
+    for (const auto &room : j.at("rooms"))
+    {
+        Room r;
+        r.number = room.at("number").get<std::string>();
+        r.status = room.at("status").get<int>();
+        r.price = room.at("price").get<int>();
+        r.maxCapacity = room.at("maxCapacity").get<int>();
+        r.capacity = room.at("capacity").get<int>();
+
+        for (const auto &user : room.at("users"))
+        {
+            Reservator u;
+            u.id = user.at("id").get<int>();
+            u.numOfBeds = user.at("numOfBeds").get<int>();
+            u.reserveDate = user.at("reserveDate").get<std::string>();
+            u.checkoutDate = user.at("checkoutDate").get<std::string>();
+            r.reservators.push_back(u);
+        }
+
+        rooms.push_back(r);
+    }
+}
+
+void raise_error(int error_no, int fd)
+{
+    std::string error_msg = error_dict[error_no];
+    if (fd == 0)
+    {
+        printf("%s\n", error_msg.c_str());
+    }
+    else
+    {
+        send(fd, error_msg.c_str(), error_msg.size(), 0);
+    }
+}
+
+User find_user_by_fd(int fd)
+{
+    for (const auto &user_status : users_status)
+    {
+        if (user_status.fd_id == fd)
+        {
+            for (const auto &user : users)
+            {
+                if (user.id == user_status.user_id)
+                {
+                    return user;
+                }
+            }
+        }
+    }
+    return null_user;
+}
+
+bool is_admin(int fd)
+{
+    User temp = find_user_by_fd(fd);
+    if (temp.isAdmin == "true")
+        return true;
+    return false;
+}
+
+void send_user_information(int fd)
+{
+    std::string message = "";
+    User user = find_user_by_fd(fd);
+
+    message += "User ID: " + std::to_string(user.id) + "\n";
+    message += "Username: " + user.username + "\n";
+    message += "Password: " + user.password + "\n";
+    message += "Purse: " + user.purse + "\n";
+    message += "Is Admin: " + user.isAdmin + "\n";
+    message += "Phone Number: " + user.phoneNumber + "\n";
+    message += "Address: " + user.address + "\n\n";
+    send(fd, message.c_str(), message.size(), 0);
+}
+
+void view_all_users(int fd)
+{
+    if (is_admin(fd))
+    {
+        std::string message = "";
+        for (const auto &user : users)
+        {
+            message += "User ID: " + std::to_string(user.id) + "\n";
+            message += "Username: " + user.username + "\n";
+            message += "Purse: " + user.purse + "\n";
+            message += "Is Admin: " + user.isAdmin + "\n";
+            message += "Phone Number: " + user.phoneNumber + "\n";
+            message += "Address: " + user.address + "\n\n";
+        }
+
+        send(fd, message.c_str(), message.size(), 0);
+    }
+    else
+    {
+        raise_error(403, fd);
+    }
+}
+
+void init_values()
+{
+    error_dict[101] = "Err -> 101: The desired room was not found\n";
+    error_dict[102] = "Err -> 102: Your reservation was not found\n";
+    error_dict[104] = "Err -> 104: Successfully added.\n";
+    error_dict[105] = "Err -> 105: Successfully modified.\n";
+    error_dict[106] = "Err -> 106: Successfully deleted.\n";
+    error_dict[108] = "Err -> 108: Your account balance is not enough\n";
+    error_dict[109] = "Err -> 109: The room capacity is full\n";
+    error_dict[110] = "Err -> 110: Successfully done.\n";
+    error_dict[111] = "Err -> 111: This room already exists\n";
+    error_dict[201] = "Err -> 201: User logged out successfully.\n";
+    error_dict[230] = "Err -> 230: User logged in.\n";
+    error_dict[231] = "Err -> 231: User successfully signed up.\n";
+    error_dict[311] = "Err -> 311: User Signed up. Enter your password, purse, phone and address.\n";
+    error_dict[312] = "Err -> 312: Information was changed successfully.\n";
+    error_dict[401] = "Err -> 401: Invalid value!\n";
+    error_dict[403] = "Err -> 403: Access denied!\n";
+    error_dict[412] = "Err -> 412: Invalid capacity value!\n";
+    error_dict[413] = "Err -> 413: successfully Leaving.\n";
+    error_dict[430] = "Err -> 430: Invalid username or password.\n";
+    error_dict[451] = "Err -> 451: User already existed!\n";
+    error_dict[503] = "Err -> 503: Bad Sequence of commands.\n";
+    null_user.id = -1;
+    pass_day_message = "Enter num of days to pass.\n";
+    edit_rooms_menu = "Options: add, modify and remove\n";
+    menu = "1. View user information\n2. view all users\n3. View rooms information\n4. Booking\n5. Canceling\n6. pass day\n7. Edit information\n8. Leaving room\n9. Rooms\n0. Logout\n";
+}
+
+void send_edit_rooms_menu(int fd)
+{
+    send(fd, edit_rooms_menu.c_str(), edit_rooms_menu.size(), 0);
+}
+
+void send_menu(int fd)
+{
+    send(fd, menu.c_str(), menu.size(), 0);
+}
+
+void send_passday_message(int fd)
+{
+    send(fd, pass_day_message.c_str(), pass_day_message.size(), 0);
+}
 
 int last_user_id()
 {
@@ -124,19 +323,6 @@ void read_config_file(std::string *addr, int *port)
     }
 }
 
-void raise_error(int error_no, int fd)
-{
-    std::string error_msg = error_dict[error_no];
-    if (fd == 0)
-    {
-        printf("%s\n", error_msg.c_str());
-    }
-    else
-    {
-        send(fd, error_msg.c_str(), error_msg.size(), 0);
-    }
-}
-
 bool is_valid_date_time(std::string buff)
 {
     std::regex pattern("^(\\d{2})-(\\d{2})-(\\d{4})");
@@ -146,21 +332,6 @@ bool is_valid_date_time(std::string buff)
     }
     raise_error(401, 0);
     return false;
-}
-
-void print_users_info()
-{
-    for (const auto &user : users)
-    {
-        std::cout << "ID: " << user.id << std::endl;
-        std::cout << "Username: " << user.username << std::endl;
-        std::cout << "Password: " << user.password << std::endl;
-        std::cout << "Is admin: " << user.isAdmin << std::endl;
-        std::cout << "Purse: " << user.purse << std::endl;
-        std::cout << "Phone number: " << user.phoneNumber << std::endl;
-        std::cout << "Address: " << user.address << std::endl;
-        std::cout << std::endl;
-    }
 }
 
 void sign_in(std::string username, std::string password, int fd_id)
@@ -177,7 +348,9 @@ void sign_in(std::string username, std::string password, int fd_id)
                 {
                     user_status.is_login = true;
                     user_status.user_id = user.id;
+                    user_status.menu_state = true;
                 }
+                send_menu(fd_id);
                 printf("User: %s logged in.\n", user.username.c_str());
             }
             return;
@@ -218,24 +391,31 @@ void create_users()
     return;
 }
 
-User complete_user_signup(User user, std::string data, int data_type)
+User complete_user_signup(User &user, std::vector<std::string> values, int data_type)
 {
-    if (data.length() == 1)
-    {
-        data_type = -1;
-    }
+    std::string data;
+    std::string message = "";
     switch (data_type)
     {
     case 0: // PASSWORD
+        data = values[0];
         user.password = data;
         break;
     case 1: // PURSE
+        data = values[0];
         user.purse = data;
         break;
     case 2: // PHONE NUMBER
+        data = values[0];
         user.phoneNumber = data;
         break;
     case 3: // ADDRESS
+        for (const auto &str : values)
+        {
+            message += str + " ";
+        }
+        message.pop_back();
+        data = message;
         user.address = data;
         break;
     default: // Invalid
@@ -312,6 +492,308 @@ std::string set_time()
     return " ";
 }
 
+void add_new_user_status(int socket_id)
+{
+    UserStatus temp;
+    temp.fd_id = socket_id;
+    temp.signup_state = -1;
+    temp.menu_state = false;
+    temp.is_login = false;
+    temp.edit_room_state = false;
+    temp.pass_day_state = false;
+    users_status.push_back(temp);
+}
+
+void send_just_rooms(int fd)
+{
+    std::string message = "";
+    for (const auto &room : rooms)
+    {
+        message += "Number: " + room.number + "\n";
+        message += "Status: " + std::to_string(room.status) + "\n";
+        message += "Price: " + std::to_string(room.price) + "\n";
+        message += "Max Capacity: " + std::to_string(room.maxCapacity) + "\n";
+        message += "Capacity: " + std::to_string(room.capacity) + "\n\n";
+    }
+
+    send(fd, message.c_str(), message.size(), 0);
+}
+
+void logout(int fd)
+{
+    int index = 0;
+    for (auto &user_status : users_status)
+    {
+        if (user_status.fd_id == fd)
+        {
+            users_status.erase(users_status.begin() + index);
+        }
+        index++;
+    }
+    printf("user fd = %d logged out\n", fd);
+    raise_error(201, fd);
+    close(fd);
+    FD_CLR(fd, &master_set);
+}
+
+void edit_rooms_mode(int fd)
+{
+    if (is_admin(fd))
+    {
+        for (auto &user_status : users_status)
+        {
+            if (user_status.fd_id == fd)
+            {
+                user_status.edit_room_state = true;
+                send_edit_rooms_menu(fd);
+            }
+        }
+    }
+    else
+    {
+        raise_error(403, fd);
+    }
+}
+
+void send_rooms_with_detail(int fd)
+{
+    std::string message = "";
+    for (const auto &room : rooms)
+    {
+        message += "Number: " + room.number + "\n";
+        message += "Status: " + std::to_string(room.status) + "\n";
+        message += "Price: " + std::to_string(room.price) + "\n";
+        message += "Max Capacity: " + std::to_string(room.maxCapacity) + "\n";
+        message += "Capacity: " + std::to_string(room.capacity) + "\n";
+        if (room.maxCapacity != room.capacity)
+        {
+            message += "Users:\n";
+            for (const auto &reservator : room.reservators)
+            {
+                if (compare_dates(reservator.reserveDate, date_time) && compare_dates(date_time, reservator.checkoutDate))
+                {
+                    message += "User ID: " + std::to_string(reservator.id) + "\n";
+                    message += "Number of beds: " + std::to_string(reservator.numOfBeds) + "\n";
+                    message += "Reservation date: " + reservator.reserveDate + "\n";
+                    message += "Checkout date: " + reservator.checkoutDate + "\n\n";
+                }
+            }
+        }
+    }
+
+    send(fd, message.c_str(), message.size(), 0);
+}
+
+void view_rooms_information(int fd)
+{
+    if (is_admin(fd))
+    {
+        send_rooms_with_detail(fd);
+    }
+    else
+    {
+        send_just_rooms(fd);
+    }
+}
+
+void pass_day(std::vector<std::string> values, int fd_id)
+{
+    if (is_admin(fd_id))
+    {
+        if (values.size() != 2 or values[0] != "passDay")
+        {
+            raise_error(503, fd_id);
+        }
+        else
+        {
+            if (is_numeric(values[1]))
+            {
+                pass_day(stoi(values[1]));
+                printf("Updated time: %s\n", date_time.c_str());
+            }
+            else
+            {
+                raise_error(503, fd_id);
+            }
+        }
+    }
+    else
+        raise_error(403, fd_id);
+}
+
+void pass_day_mode(int fd)
+{
+    if (is_admin(fd))
+    {
+        for (auto &user_status : users_status)
+        {
+            if (user_status.fd_id == fd)
+            {
+                user_status.pass_day_state = true;
+                send_passday_message(fd);
+            }
+        }
+    }
+    else
+    {
+        raise_error(403, fd);
+    }
+}
+
+void handle_menu_commands(std::vector<std::string> values, int fd_id)
+{
+    if ((values[0][0] < '0') || (values[0][0] > '9') || (values[0].size() > 1) || (values.size() != 1))
+        raise_error(503, fd_id);
+    int num = values[0][0] - '0';
+    switch (num)
+    {
+    case 0:
+        logout(fd_id);
+        break;
+    case 1:
+        send_user_information(fd_id);
+        break;
+    case 2:
+        view_all_users(fd_id);
+        break;
+    case 3:
+        view_rooms_information(fd_id);
+        break;
+    case 4:
+        break;
+    case 5:
+        break;
+    case 6:
+        pass_day_mode(fd_id);
+        break;
+    case 7:
+        break;
+    case 8:
+        break;
+    case 9:
+        edit_rooms_mode(fd_id);
+        break;
+    }
+}
+
+bool is_room_number_exist(std::string room_number)
+{
+    for (const auto &room : rooms)
+        if (room.number == room_number)
+            return true;
+    return false;
+}
+
+void add_new_room(std::string room_num, std::string maxcap, std::string price, int fd)
+{
+    if (is_numeric(maxcap) && is_numeric(price))
+    {
+        Room room;
+        room.number = room_num;
+        room.maxCapacity = stoi(maxcap);
+        room.price = stoi(price);
+        room.capacity = 0;
+        room.status = 0;
+        rooms.push_back(room);
+        raise_error(104, fd);
+    }
+    else
+    {
+        raise_error(503, fd);
+    }
+}
+
+void modify_room(std::string room_num, std::string maxcap, std::string price, int fd)
+{
+    if (is_numeric(maxcap) && is_numeric(price))
+    {
+        for (auto &room : rooms)
+            if (room.number == room_num)
+            {
+                if ((stoi(maxcap) < room.maxCapacity) && room.status == 1)
+                {
+                    raise_error(109, fd);
+                }
+                else
+                {
+                    room.maxCapacity = stoi(maxcap);
+                    room.price = stoi(price);
+                    raise_error(105, fd);
+                }
+            }
+    }
+    else
+    {
+        raise_error(503, fd);
+    }
+}
+
+void remove_room(std::string room_num, int fd)
+{
+    int index = 0;
+    for (auto &room : rooms)
+    {
+        if (room.number == room_num)
+        {
+            if (room.status == 1)
+            {
+                raise_error(109, fd);
+            }
+            else
+            {
+                rooms.erase(rooms.begin() + index);
+                raise_error(106, fd);
+            }
+        }
+        index++;
+    }
+}
+
+void handle_edit_rooms_commands(std::vector<std::string> values, int fd_id)
+{
+    if (values[0] == "add")
+    {
+        if (values.size() != 4)
+            raise_error(503, fd_id);
+        if (is_room_number_exist(values[1]))
+            raise_error(111, fd_id);
+        else
+        {
+            add_new_room(values[1], values[2], values[3], fd_id);
+        }
+    }
+    else if (values[0] == "modify")
+    {
+        if (values.size() != 4)
+            raise_error(503, fd_id);
+        if (is_room_number_exist(values[1]))
+        {
+            modify_room(values[1], values[2], values[3], fd_id);
+        }
+        else
+        {
+            raise_error(101, fd_id);
+        }
+    }
+    else if (values[0] == "remove")
+    {
+        if (values.size() != 2)
+            raise_error(503, fd_id);
+        if (is_room_number_exist(values[1]))
+        {
+            remove_room(values[1], fd_id);
+        }
+        else
+        {
+            raise_error(101, fd_id);
+        }
+    }
+    else
+    {
+        raise_error(503, fd_id);
+    }
+}
+
 void handle_commands(std::vector<std::string> values, int fd_id)
 {
     for (auto &user_status : users_status)
@@ -319,26 +801,46 @@ void handle_commands(std::vector<std::string> values, int fd_id)
         if (user_status.fd_id == fd_id)
         {
             if (user_status.signup_state != -1)
-            {
-                if (values.size() > 1)
+            { // Signup states.
+                if (values.size() > 1 && user_status.signup_state != 3)
                 {
                     raise_error(503, fd_id);
                     user_status.signup_state = -1;
                     return;
                 }
-                complete_user_signup(user_status.temp_info, values[0], user_status.signup_state);
+                complete_user_signup(user_status.temp_info, values, user_status.signup_state);
                 user_status.signup_state++;
                 if (user_status.signup_state == 4)
                 {
                     user_status.temp_info.id = last_user_id() + 1;
+                    user_status.temp_info.isAdmin = "false";
                     users.push_back(user_status.temp_info);
                     user_status.signup_state = -1;
+                    user_status.is_login = true;
+                    user_status.menu_state = true;
                     raise_error(231, fd_id);
+                    send_menu(fd_id);
                 }
                 return;
             }
+            else if (user_status.pass_day_state)
+            {
+                pass_day(values, fd_id);
+                user_status.pass_day_state = false;
+            }
+
+            else if (user_status.edit_room_state)
+            { // Edit rooms commands
+                handle_edit_rooms_commands(values, fd_id);
+                user_status.edit_room_state = false;
+            }
+            else if (user_status.menu_state)
+            { // Menu commands
+                handle_menu_commands(values, fd_id);
+            }
         }
     }
+
     if (values[0] == "signin")
     {
         if (values.size() == 3)
@@ -358,25 +860,16 @@ void handle_commands(std::vector<std::string> values, int fd_id)
     }
 }
 
-void add_new_user_status(int socket_id)
-{
-    UserStatus temp;
-    temp.fd_id = socket_id;
-    temp.signup_state = -1;
-    users_status.push_back(temp);
-}
-
 int main(int argc, char const *argv[])
 {
     init_values();
     int server_fd, new_socket, max_sd;
     char buffer[2048] = {0};
-    fd_set master_set, working_set;
     std::string addr;
     int port;
-    std::string date_time;
     read_config_file(&addr, &port);
     create_users();
+    read_rooms_information();
     printf("Please set start time with command 'setTime', Pay attention to the date format. (EX. -setTime 10-10-2010)\n");
     while (1)
     {
@@ -402,7 +895,7 @@ int main(int argc, char const *argv[])
             {
 
                 if (i == server_fd)
-                { // new clinet
+                { // new User
                     new_socket = acceptClient(server_fd);
                     FD_SET(new_socket, &master_set);
                     if (new_socket > max_sd)
@@ -412,15 +905,13 @@ int main(int argc, char const *argv[])
                 }
 
                 else
-                { // client sending msg
+                { // User sending msg
                     int bytes_received;
                     bytes_received = recv(i, buffer, 2048, 0);
 
                     if (bytes_received == 0)
-                    { // EOF
-                        printf("client fd = %d closed\n", i);
-                        close(i);
-                        FD_CLR(i, &master_set);
+                    { // Connection closed
+                        logout(i);
                         continue;
                     }
                     std::vector<std::string> values = command_serializer(buffer);
