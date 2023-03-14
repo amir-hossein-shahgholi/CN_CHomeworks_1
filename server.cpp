@@ -29,7 +29,75 @@ public:
 };
 std::vector<User> users;
 User null_user;
+class UserStatus
+{
+public:
+    int user_id;
+    bool is_login;
+    int fd_id;
+    int signup_state;
+    User temp_info;
+    bool menu_state;
+};
+std::vector<UserStatus> users_status;
 
+void raise_error(int error_no, int fd)
+{
+    std::string error_msg = error_dict[error_no];
+    if (fd == 0)
+    {
+        printf("%s\n", error_msg.c_str());
+    }
+    else
+    {
+        send(fd, error_msg.c_str(), error_msg.size(), 0);
+    }
+}
+
+void send_user_information(int fd)
+{
+    std::string message = "";
+    for (const auto &user : users)
+    {
+        message += "User ID: " + std::to_string(user.id) + "\n";
+        message += "Username: " + user.username + "\n";
+        message += "Is Admin: " + user.isAdmin + "\n";
+        message += "Phone Number: " + user.phoneNumber + "\n";
+        message += "Address: " + user.address + "\n\n";
+    }
+
+    send(fd, message.c_str(), message.size(), 0);
+}
+void handle_menu_commands(std::vector<std::string> values, int fd_id)
+{
+    if ((values[0][0] < '0') || (values[0][0] > '9') || (values[0].size() > 1) || (values.size() != 1))
+        raise_error(503, fd_id);
+    int num = values[0][0] - '0';
+    switch (num)
+    {
+    case 0:
+        break;
+    case 1:
+        send_user_information(fd_id);
+        break;
+    case 2:
+        break;
+    case 3:
+        break;
+    case 4:
+        break;
+    case 5:
+        break;
+    case 6:
+        break;
+    case 7:
+        break;
+    case 8:
+        break;
+    case 9:
+        break;
+    }
+}
 void init_values()
 {
     error_dict[101] = "Err -> 101: The desired room was not found\n";
@@ -61,16 +129,6 @@ void send_menu(int fd)
 {
     send(fd, menu.c_str(), menu.size(), 0);
 }
-class UserStatus
-{
-public:
-    int user_id;
-    bool is_login;
-    int fd_id;
-    int signup_state;
-    User temp_info;
-};
-std::vector<UserStatus> users_status;
 
 int last_user_id()
 {
@@ -129,19 +187,6 @@ void read_config_file(std::string *addr, int *port)
     }
 }
 
-void raise_error(int error_no, int fd)
-{
-    std::string error_msg = error_dict[error_no];
-    if (fd == 0)
-    {
-        printf("%s\n", error_msg.c_str());
-    }
-    else
-    {
-        send(fd, error_msg.c_str(), error_msg.size(), 0);
-    }
-}
-
 bool is_valid_date_time(std::string buff)
 {
     std::regex pattern("^(\\d{2})-(\\d{2})-(\\d{4})");
@@ -151,21 +196,6 @@ bool is_valid_date_time(std::string buff)
     }
     raise_error(401, 0);
     return false;
-}
-
-void print_users_info()
-{
-    for (const auto &user : users)
-    {
-        std::cout << "ID: " << user.id << std::endl;
-        std::cout << "Username: " << user.username << std::endl;
-        std::cout << "Password: " << user.password << std::endl;
-        std::cout << "Is admin: " << user.isAdmin << std::endl;
-        std::cout << "Purse: " << user.purse << std::endl;
-        std::cout << "Phone number: " << user.phoneNumber << std::endl;
-        std::cout << "Address: " << user.address << std::endl;
-        std::cout << std::endl;
-    }
 }
 
 void sign_in(std::string username, std::string password, int fd_id)
@@ -182,6 +212,7 @@ void sign_in(std::string username, std::string password, int fd_id)
                 {
                     user_status.is_login = true;
                     user_status.user_id = user.id;
+                    user_status.menu_state = true;
                 }
                 send_menu(fd_id);
                 printf("User: %s logged in.\n", user.username.c_str());
@@ -325,7 +356,7 @@ void handle_commands(std::vector<std::string> values, int fd_id)
         if (user_status.fd_id == fd_id)
         {
             if (user_status.signup_state != -1)
-            {
+            { // Signup states.
                 if (values.size() > 1)
                 {
                     raise_error(503, fd_id);
@@ -344,6 +375,10 @@ void handle_commands(std::vector<std::string> values, int fd_id)
                     send_menu(fd_id);
                 }
                 return;
+            }
+            else if (user_status.menu_state)
+            { // Menu commands
+                handle_menu_commands(values, fd_id);
             }
         }
     }
@@ -372,6 +407,8 @@ void add_new_user_status(int socket_id)
     UserStatus temp;
     temp.fd_id = socket_id;
     temp.signup_state = -1;
+    temp.menu_state = false;
+    temp.is_login = false;
     users_status.push_back(temp);
 }
 
