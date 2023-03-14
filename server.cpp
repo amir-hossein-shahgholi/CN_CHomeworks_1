@@ -20,6 +20,7 @@ fd_set master_set, working_set;
 std::map<int, std::string> error_dict;
 std::string menu;
 std::string edit_rooms_menu;
+std::string pass_day_message;
 struct Reservator
 {
     int id;
@@ -61,6 +62,7 @@ public:
     User temp_info;
     bool menu_state;
     bool edit_room_state;
+    bool pass_day_state;
 };
 std::vector<UserStatus> users_status;
 
@@ -76,6 +78,19 @@ std::tm parse_date(const std::string &date_string)
     date.tm_mon -= 1;
     date.tm_year -= 1900;
     return date;
+}
+
+void pass_day(int num_of_days)
+{
+    struct tm tmDate = {0};
+    strptime(date_time.c_str(), "%d-%m-%Y", &tmDate);
+    time_t utcTime = mktime(&tmDate);
+    utcTime += num_of_days * 24 * 60 * 60;
+    tmDate = *localtime(&utcTime);
+    char dateBuffer[11];
+    strftime(dateBuffer, sizeof(dateBuffer), "%d-%m-%Y", &tmDate);
+    std::string updatedDateStr = dateBuffer;
+    date_time = updatedDateStr;
 }
 
 bool is_numeric(std::string str)
@@ -231,6 +246,7 @@ void init_values()
     error_dict[451] = "Err -> 451: User already existed!\n";
     error_dict[503] = "Err -> 503: Bad Sequence of commands.\n";
     null_user.id = -1;
+    pass_day_message = "Enter num of days to pass.\n";
     edit_rooms_menu = "Options: add, modify and remove\n";
     menu = "1. View user information\n2. view all users\n3. View rooms information\n4. Booking\n5. Canceling\n6. pass day\n7. Edit information\n8. Leaving room\n9. Rooms\n0. Logout\n";
 }
@@ -243,6 +259,11 @@ void send_edit_rooms_menu(int fd)
 void send_menu(int fd)
 {
     send(fd, menu.c_str(), menu.size(), 0);
+}
+
+void send_passday_message(int fd)
+{
+    send(fd, pass_day_message.c_str(), pass_day_message.size(), 0);
 }
 
 int last_user_id()
@@ -479,6 +500,7 @@ void add_new_user_status(int socket_id)
     temp.menu_state = false;
     temp.is_login = false;
     temp.edit_room_state = false;
+    temp.pass_day_state = false;
     users_status.push_back(temp);
 }
 
@@ -574,6 +596,50 @@ void view_rooms_information(int fd)
     }
 }
 
+void pass_day(std::vector<std::string> values, int fd_id)
+{
+    if (is_admin(fd_id))
+    {
+        if (values.size() != 2 or values[0] != "passDay")
+        {
+            raise_error(503, fd_id);
+        }
+        else
+        {
+            if (is_numeric(values[1]))
+            {
+                pass_day(stoi(values[1]));
+                printf("Updated time: %s\n", date_time.c_str());
+            }
+            else
+            {
+                raise_error(503, fd_id);
+            }
+        }
+    }
+    else
+        raise_error(403, fd_id);
+}
+
+void pass_day_mode(int fd)
+{
+    if (is_admin(fd))
+    {
+        for (auto &user_status : users_status)
+        {
+            if (user_status.fd_id == fd)
+            {
+                user_status.pass_day_state = true;
+                send_passday_message(fd);
+            }
+        }
+    }
+    else
+    {
+        raise_error(403, fd);
+    }
+}
+
 void handle_menu_commands(std::vector<std::string> values, int fd_id)
 {
     if ((values[0][0] < '0') || (values[0][0] > '9') || (values[0].size() > 1) || (values.size() != 1))
@@ -598,6 +664,7 @@ void handle_menu_commands(std::vector<std::string> values, int fd_id)
     case 5:
         break;
     case 6:
+        pass_day_mode(fd_id);
         break;
     case 7:
         break;
@@ -756,6 +823,12 @@ void handle_commands(std::vector<std::string> values, int fd_id)
                 }
                 return;
             }
+            else if (user_status.pass_day_state)
+            {
+                pass_day(values, fd_id);
+                user_status.pass_day_state = false;
+            }
+
             else if (user_status.edit_room_state)
             { // Edit rooms commands
                 handle_edit_rooms_commands(values, fd_id);
