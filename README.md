@@ -47,8 +47,19 @@ signup "Username"
 signin "Username" "Password"
 </pre>
 
+If you signin or signup successfully you will see [Menu of Commands](#Commands-menu).
 
-
+## Commands-menu
+0. Logout
+1. View user information
+2. view all users
+3. View rooms information
+4. Booking
+5. Canceling
+6. pass day
+7. Edit information
+8. Leaving room
+9. Rooms
 
 ## List-of-Errors
 ![alt text](./images/errors.png)
