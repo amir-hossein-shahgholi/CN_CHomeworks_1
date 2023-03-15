@@ -350,7 +350,6 @@ void sign_in(std::string username, std::string password, int fd_id)
                     user_status.user_id = user.id;
                     user_status.menu_state = true;
                 }
-                send_menu(fd_id);
                 printf("User: %s logged in.\n", user.username.c_str());
             }
             return;
@@ -596,6 +595,20 @@ void view_rooms_information(int fd)
     }
 }
 
+void update_rooms_status(std::string old_date)
+{
+    for (auto &room : rooms)
+    {
+        for (const auto &reservator : room.reservators)
+        {
+            if (compare_dates(reservator.checkoutDate, date_time) && (compare_dates(old_date, reservator.checkoutDate) || old_date == reservator.checkoutDate))
+            {
+                room.capacity += reservator.numOfBeds;
+            }
+        }
+    }
+}
+
 void pass_day(std::vector<std::string> values, int fd_id)
 {
     if (is_admin(fd_id))
@@ -806,6 +819,7 @@ void handle_commands(std::vector<std::string> values, int fd_id)
                 {
                     raise_error(503, fd_id);
                     user_status.signup_state = -1;
+                    send_menu(fd_id);
                     return;
                 }
                 complete_user_signup(user_status.temp_info, values, user_status.signup_state);
@@ -819,13 +833,16 @@ void handle_commands(std::vector<std::string> values, int fd_id)
                     user_status.is_login = true;
                     user_status.menu_state = true;
                     raise_error(231, fd_id);
-                    send_menu(fd_id);
                 }
+                send_menu(fd_id);
                 return;
             }
             else if (user_status.pass_day_state)
             {
+                std::string old_date;
+                old_date = date_time;
                 pass_day(values, fd_id);
+                update_rooms_status(old_date);
                 user_status.pass_day_state = false;
             }
 
@@ -838,13 +855,20 @@ void handle_commands(std::vector<std::string> values, int fd_id)
             { // Menu commands
                 handle_menu_commands(values, fd_id);
             }
+            if ((!user_status.edit_room_state) && (!user_status.pass_day_state) && (user_status.signup_state == -1) && (user_status.is_login))
+            {
+                send_menu(fd_id);
+            }
         }
     }
 
     if (values[0] == "signin")
     {
         if (values.size() == 3)
+        {
             sign_in(values[1], values[2], fd_id);
+            send_menu(fd_id);
+        }
         else
             raise_error(430, fd_id);
     }
