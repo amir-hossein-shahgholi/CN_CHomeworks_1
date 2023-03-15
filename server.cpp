@@ -179,7 +179,6 @@ User find_user_by_fd(int fd)
 bool is_admin(int fd)
 {
     User temp = find_user_by_fd(fd);
-    printf("%s\n", temp.isAdmin.c_str());
     if (temp.isAdmin == "true")
         return true;
     return false;
@@ -351,7 +350,6 @@ void sign_in(std::string username, std::string password, int fd_id)
                     user_status.user_id = user.id;
                     user_status.menu_state = true;
                 }
-                send_menu(fd_id);
                 printf("User: %s logged in.\n", user.username.c_str());
             }
             return;
@@ -821,6 +819,7 @@ void handle_commands(std::vector<std::string> values, int fd_id)
                 {
                     raise_error(503, fd_id);
                     user_status.signup_state = -1;
+                    send_menu(fd_id);
                     return;
                 }
                 complete_user_signup(user_status.temp_info, values, user_status.signup_state);
@@ -834,8 +833,8 @@ void handle_commands(std::vector<std::string> values, int fd_id)
                     user_status.is_login = true;
                     user_status.menu_state = true;
                     raise_error(231, fd_id);
-                    send_menu(fd_id);
                 }
+                send_menu(fd_id);
                 return;
             }
             else if (user_status.pass_day_state)
@@ -856,13 +855,20 @@ void handle_commands(std::vector<std::string> values, int fd_id)
             { // Menu commands
                 handle_menu_commands(values, fd_id);
             }
+            if ((!user_status.edit_room_state) && (!user_status.pass_day_state) && (user_status.signup_state == -1) && (user_status.is_login))
+            {
+                send_menu(fd_id);
+            }
         }
     }
 
     if (values[0] == "signin")
     {
         if (values.size() == 3)
+        {
             sign_in(values[1], values[2], fd_id);
+            send_menu(fd_id);
+        }
         else
             raise_error(430, fd_id);
     }
