@@ -179,6 +179,7 @@ User find_user_by_fd(int fd)
 bool is_admin(int fd)
 {
     User temp = find_user_by_fd(fd);
+    printf("%s\n", temp.isAdmin.c_str());
     if (temp.isAdmin == "true")
         return true;
     return false;
@@ -596,6 +597,20 @@ void view_rooms_information(int fd)
     }
 }
 
+void update_rooms_status(std::string old_date)
+{
+    for (auto &room : rooms)
+    {
+        for (const auto &reservator : room.reservators)
+        {
+            if (compare_dates(reservator.checkoutDate, date_time) && (compare_dates(old_date, reservator.checkoutDate) || old_date == reservator.checkoutDate))
+            {
+                room.capacity += reservator.numOfBeds;
+            }
+        }
+    }
+}
+
 void pass_day(std::vector<std::string> values, int fd_id)
 {
     if (is_admin(fd_id))
@@ -825,7 +840,10 @@ void handle_commands(std::vector<std::string> values, int fd_id)
             }
             else if (user_status.pass_day_state)
             {
+                std::string old_date;
+                old_date = date_time;
                 pass_day(values, fd_id);
+                update_rooms_status(old_date);
                 user_status.pass_day_state = false;
             }
 
