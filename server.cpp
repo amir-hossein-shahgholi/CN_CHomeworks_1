@@ -20,6 +20,7 @@ fd_set master_set, working_set;
 std::map<int, std::string> error_dict;
 std::string menu;
 std::string edit_rooms_menu;
+std::string booking_message;
 std::string pass_day_message;
 struct Reservator
 {
@@ -63,6 +64,7 @@ public:
     bool menu_state;
     bool edit_room_state;
     bool pass_day_state;
+    bool booking_status;
 };
 std::vector<UserStatus> users_status;
 
@@ -248,7 +250,13 @@ void init_values()
     null_user.id = -1;
     pass_day_message = "Enter num of days to pass.\n";
     edit_rooms_menu = "Options: add, modify and remove\n";
+    booking_message = "Enter num of room, people, reservation start date and end date.\n";
     menu = "1. View user information\n2. view all users\n3. View rooms information\n4. Booking\n5. Canceling\n6. pass day\n7. Edit information\n8. Leaving room\n9. Rooms\n0. Logout\n";
+}
+
+void send_booking_room(int fd)
+{
+    send(fd, booking_message.c_str(), booking_message.size(), 0);
 }
 
 void send_edit_rooms_menu(int fd)
@@ -653,6 +661,17 @@ void pass_day_mode(int fd)
     }
 }
 
+void booking(int fd){
+    for (auto &user_status : users_status)
+        {
+            if (user_status.fd_id == fd)
+            {
+                user_status.booking_status= true;
+                send_booking_room(fd);
+            }
+        }
+}
+
 void handle_menu_commands(std::vector<std::string> values, int fd_id)
 {
     if ((values[0][0] < '0') || (values[0][0] > '9') || (values[0].size() > 1) || (values.size() != 1))
@@ -673,6 +692,7 @@ void handle_menu_commands(std::vector<std::string> values, int fd_id)
         view_rooms_information(fd_id);
         break;
     case 4:
+        booking(fd_id);
         break;
     case 5:
         break;
@@ -695,6 +715,15 @@ bool is_room_number_exist(std::string room_number)
         if (room.number == room_number)
             return true;
     return false;
+}
+
+Room room_by_id(std::string room_number)
+{
+    Room s;
+    for (const auto &room : rooms)
+        if (room.number == room_number)
+            return room;
+    return s;
 }
 
 void add_new_room(std::string room_num, std::string maxcap, std::string price, int fd)
@@ -807,6 +836,62 @@ void handle_edit_rooms_commands(std::vector<std::string> values, int fd_id)
     }
 }
 
+void handle_booking_state(std::vector<std::string> values, int fd_id)
+{
+    if ((values[0] == "book") && (is_valid_date_time((values[3]))) && (is_valid_date_time((values[4]))))
+    {
+        Room room;
+        User user = find_user_by_fd(fd_id);
+        if (values.size() != 5)
+            raise_error(503, fd_id);
+        if (is_room_number_exist(values[1])){
+            room = room_by_id(values[1]);
+            if (room.status == 1)
+                raise_error(109, fd_id);
+            else {
+                if (room.maxCapacity < stoi(values[2]))
+                    raise_error(109, fd_id);
+                else{
+                    if ((stoi(values[2]) * room.price) > stoi(user.purse)){
+                        raise_error(108, fd_id);
+                    }
+                    else {
+                        int flag = 0;
+                        for (auto &reservator : room.reservators) {
+                            if (compare_dates(values[3], reservator.checkoutDate))
+                            {
+                                if (compare_dates(reservator.reserveDate, values[4]))
+                                {
+                                    if (room.maxCapacity - reservator.numOfBeds < stoi(values[2]))
+                                    raise_error(109, fd_id);
+                                    flag = 1;
+                                }
+                            }
+                        }
+                        if (flag == 0){
+                            user.purse = std::to_string(stoi(user.purse) - (stoi(values[2]) * room.price));
+                            Reservator res;
+                            res.id = user.id;
+                            res.numOfBeds = stoi(values[2]);
+                            res.reserveDate = values[3];
+                            res.checkoutDate = values[4];
+                            room.reservators.push_back(res);
+                        }
+                    }
+                }
+            }
+        }
+        else
+        {   
+            raise_error(111, fd_id);
+        }
+    }
+    else
+    {
+        raise_error(503, fd_id);
+    }
+}
+
 void handle_commands(std::vector<std::string> values, int fd_id)
 {
     for (auto &user_status : users_status)
@@ -837,6 +922,11 @@ void handle_commands(std::vector<std::string> values, int fd_id)
                 send_menu(fd_id);
                 return;
             }
+            else if (user_status.booking_status)
+            { // booking
+                handle_booking_state(values, fd_id);
+                user_status.booking_status = false;
+            }
             else if (user_status.pass_day_state)
             {
                 std::string old_date;
@@ -855,7 +945,7 @@ void handle_commands(std::vector<std::string> values, int fd_id)
             { // Menu commands
                 handle_menu_commands(values, fd_id);
             }
-            if ((!user_status.edit_room_state) && (!user_status.pass_day_state) && (user_status.signup_state == -1) && (user_status.is_login))
+            if ((!user_status.edit_room_state) && (!user_status.booking_status) && (!user_status.pass_day_state) && (user_status.signup_state == -1) && (user_status.is_login))
             {
                 send_menu(fd_id);
             }
