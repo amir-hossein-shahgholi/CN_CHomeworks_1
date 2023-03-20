@@ -23,6 +23,7 @@ std::string edit_rooms_menu;
 std::string booking_message;
 std::string canceling_message;
 std::string leaving_message;
+std::string edit_message;
 std::string pass_day_message;
 struct Reservator
 {
@@ -69,6 +70,7 @@ public:
     bool booking_status;
     bool canceling_status;
     bool leaving_status;
+    bool edit_status;
 };
 std::vector<UserStatus> users_status;
 
@@ -257,12 +259,18 @@ void init_values()
     booking_message = "Enter num of room, people, reservation start date and end date.\n";
     leaving_message = "Enter num of room\n";
     canceling_message = "Enter num of room and beds to cancel.\n";
+    edit_message = "Enter new password phone and address\n";
     menu = "1. View user information\n2. view all users\n3. View rooms information\n4. Booking\n5. Canceling\n6. pass day\n7. Edit information\n8. Leaving room\n9. Rooms\n0. Logout\n";
 }
 
 void send_booking_room(int fd)
 {
     send(fd, booking_message.c_str(), booking_message.size(), 0);
+}
+
+void send_edit_user(int fd)
+{
+    send(fd, edit_message.c_str(), edit_message.size(), 0);
 }
 
 void send_edit_rooms_menu(int fd)
@@ -710,6 +718,17 @@ void leaving_room(int fd){
         }
 }
 
+void edit_user(int fd){
+    for (auto &user_status : users_status)
+        {
+            if (user_status.fd_id == fd)
+            {
+                user_status.edit_status= true;
+                send_edit_user(fd);
+            }
+        }
+}
+
 void handle_menu_commands(std::vector<std::string> values, int fd_id)
 {
     if ((values[0][0] < '0') || (values[0][0] > '9') || (values[0].size() > 1) || (values.size() != 1))
@@ -739,6 +758,7 @@ void handle_menu_commands(std::vector<std::string> values, int fd_id)
         pass_day_mode(fd_id);
         break;
     case 7:
+        edit_user(fd_id);
         break;
     case 8:
         leaving_room(fd_id);
@@ -1001,25 +1021,25 @@ void handle_leaving_state(std::vector<std::string> values, int fd_id)
             raise_error(503, fd_id);
         if (is_room_number_exist(values[1])){
             room = room_by_id(values[1]);
-                int flag = 0;
-                int count = 0;
-                for (auto &reservator : room.reservators) {
-                    if (user.id==reservator.id)
-                    {
-                        flag = 1;
-                            if(compare_dates(date_time ,reservator.reserveDate)){
-                                raise_error(102, fd_id);
-                            }
-                            else{
-                                room.reservators.erase(room.reservators.begin() + count);
-                                raise_error(110, fd_id);
-                            }
-                    }
-                    count++;
+            int flag = 0;
+            int count = 0;
+            for (auto &reservator : room.reservators) {
+                if (user.id==reservator.id)
+                {
+                    flag = 1;
+                        if(compare_dates(date_time ,reservator.reserveDate)){
+                            raise_error(102, fd_id);
+                        }
+                        else{
+                            room.reservators.erase(room.reservators.begin() + count);
+                            raise_error(110, fd_id);
+                        }
                 }
-                if (flag == 0){
-                    raise_error(102, fd_id);
-                }
+                count++;
+            }
+            if (flag == 0){
+                raise_error(102, fd_id);
+            }
         }
         else
         {   
@@ -1031,6 +1051,18 @@ void handle_leaving_state(std::vector<std::string> values, int fd_id)
         raise_error(503, fd_id);
     }
 }
+
+void handle_edit_state(std::vector<std::string> values, int fd_id)
+{
+    User user = find_user_by_fd(fd_id);
+    if (values.size() != 3)
+        raise_error(503, fd_id);
+    user.password = values[0];
+    user.phoneNumber = values[1];
+    user.address = values[2];
+    raise_error(312, fd_id);
+}
+
 
 void handle_commands(std::vector<std::string> values, int fd_id)
 {
@@ -1067,6 +1099,11 @@ void handle_commands(std::vector<std::string> values, int fd_id)
                 handle_booking_state(values, fd_id);
                 user_status.booking_status = false;
             }
+            else if (user_status.edit_status)
+            { // booking
+                handle_edit_state(values, fd_id);
+                user_status.edit_status = false;
+            }
             else if (user_status.leaving_status)
             { // leaving
                 handle_leaving_state(values, fd_id);
@@ -1095,7 +1132,7 @@ void handle_commands(std::vector<std::string> values, int fd_id)
             { // Menu commands
                 handle_menu_commands(values, fd_id);
             }
-            if ((!user_status.edit_room_state) && (!user_status.leaving_status) && (!user_status.canceling_status) && (!user_status.booking_status) && (!user_status.pass_day_state) && (user_status.signup_state == -1) && (user_status.is_login))
+            if ((!user_status.edit_room_state) && (!user_status.edit_status) && (!user_status.leaving_status) && (!user_status.canceling_status) && (!user_status.booking_status) && (!user_status.pass_day_state) && (user_status.signup_state == -1) && (user_status.is_login))
             {
                 send_menu(fd_id);
             }
