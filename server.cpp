@@ -21,6 +21,7 @@ std::map<int, std::string> error_dict;
 std::string menu;
 std::string edit_rooms_menu;
 std::string booking_message;
+std::string canceling_message;
 std::string pass_day_message;
 struct Reservator
 {
@@ -65,6 +66,7 @@ public:
     bool edit_room_state;
     bool pass_day_state;
     bool booking_status;
+    bool canceling_status;
 };
 std::vector<UserStatus> users_status;
 
@@ -251,6 +253,7 @@ void init_values()
     pass_day_message = "Enter num of days to pass.\n";
     edit_rooms_menu = "Options: add, modify and remove\n";
     booking_message = "Enter num of room, people, reservation start date and end date.\n";
+    canceling_message = "Enter num of room and beds to cancel.\n";
     menu = "1. View user information\n2. view all users\n3. View rooms information\n4. Booking\n5. Canceling\n6. pass day\n7. Edit information\n8. Leaving room\n9. Rooms\n0. Logout\n";
 }
 
@@ -262,6 +265,11 @@ void send_booking_room(int fd)
 void send_edit_rooms_menu(int fd)
 {
     send(fd, edit_rooms_menu.c_str(), edit_rooms_menu.size(), 0);
+}
+
+void send_canceling_room(int fd)
+{
+    send(fd, canceling_message.c_str(), canceling_message.size(), 0);
 }
 
 void send_menu(int fd)
@@ -672,6 +680,17 @@ void booking(int fd){
         }
 }
 
+void canceling(int fd){
+    for (auto &user_status : users_status)
+        {
+            if (user_status.fd_id == fd)
+            {
+                user_status.canceling_status= true;
+                send_canceling_room(fd);
+            }
+        }
+}
+
 void handle_menu_commands(std::vector<std::string> values, int fd_id)
 {
     if ((values[0][0] < '0') || (values[0][0] > '9') || (values[0].size() > 1) || (values.size() != 1))
@@ -695,6 +714,7 @@ void handle_menu_commands(std::vector<std::string> values, int fd_id)
         booking(fd_id);
         break;
     case 5:
+        canceling(fd_id);
         break;
     case 6:
         pass_day_mode(fd_id);
@@ -840,6 +860,8 @@ void handle_booking_state(std::vector<std::string> values, int fd_id)
 {
     if ((values[0] == "book") && (is_valid_date_time((values[3]))) && (is_valid_date_time((values[4]))))
     {
+        if (!compare_dates(values[3],values[4]))
+            raise_error(101, fd_id);
         Room room;
         User user = find_user_by_fd(fd_id);
         if (values.size() != 5)
@@ -883,7 +905,59 @@ void handle_booking_state(std::vector<std::string> values, int fd_id)
         }
         else
         {   
-            raise_error(111, fd_id);
+            raise_error(101, fd_id);
+        }
+    }
+    else
+    {
+        raise_error(503, fd_id);
+    }
+}
+
+void handle_canceling_state(std::vector<std::string> values, int fd_id)
+{
+    if ((values[0] == "cancel"))
+    {
+        Room room;
+        User user = find_user_by_fd(fd_id);
+        if (values.size() != 3)
+            raise_error(503, fd_id);
+        if (is_room_number_exist(values[1])){
+            room = room_by_id(values[1]);
+            if(room.maxCapacity < stoi(values[2])){
+                raise_error(102, fd_id);
+            }
+            else {
+                int flag = 0;
+                int count = 0;
+                        for (auto &reservator : room.reservators) {
+                            if (user.id==reservator.id)
+                            {
+                                flag = 1;
+                                if (reservator.numOfBeds < stoi(values[2])){
+                                    raise_error(102, fd_id);
+                                }
+                                else {
+                                    user.purse += room.price* stoi(values[2])/2;
+                                    if (reservator.numOfBeds > stoi(values[2])){
+                                        reservator.numOfBeds -= stoi(values[2]);
+                                    }
+                                    else {
+                                        room.reservators.erase(room.reservators.begin() + count);
+                                    }
+                                    raise_error(110, fd_id);
+                                }
+                            }
+                            count++;
+                        }
+                        if (flag == 0){
+                            raise_error(101, fd_id);
+                        }
+            }
+        }
+        else
+        {   
+            raise_error(101, fd_id);
         }
     }
     else
@@ -927,6 +1001,11 @@ void handle_commands(std::vector<std::string> values, int fd_id)
                 handle_booking_state(values, fd_id);
                 user_status.booking_status = false;
             }
+            else if (user_status.canceling_status)
+            { // booking
+                handle_canceling_state(values, fd_id);
+                user_status.canceling_status = false;
+            }
             else if (user_status.pass_day_state)
             {
                 std::string old_date;
@@ -945,7 +1024,7 @@ void handle_commands(std::vector<std::string> values, int fd_id)
             { // Menu commands
                 handle_menu_commands(values, fd_id);
             }
-            if ((!user_status.edit_room_state) && (!user_status.booking_status) && (!user_status.pass_day_state) && (user_status.signup_state == -1) && (user_status.is_login))
+            if ((!user_status.edit_room_state) && (!user_status.canceling_status) && (!user_status.booking_status) && (!user_status.pass_day_state) && (user_status.signup_state == -1) && (user_status.is_login))
             {
                 send_menu(fd_id);
             }
