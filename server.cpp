@@ -383,6 +383,7 @@ void sign_in(std::string username, std::string password, int fd_id)
                     user_status.menu_state = true;
                 }
                 printf("User: %s logged in.\n", user.username.c_str());
+                send_menu(fd_id);
             }
             return;
         }
@@ -532,6 +533,10 @@ void add_new_user_status(int socket_id)
     temp.is_login = false;
     temp.edit_room_state = false;
     temp.pass_day_state = false;
+    temp.booking_status = false;
+    temp.canceling_status = false;
+    temp.leaving_status = false;
+    temp.edit_status = false;
     users_status.push_back(temp);
 }
 
@@ -685,48 +690,52 @@ void pass_day_mode(int fd)
     }
 }
 
-void booking(int fd){
+void booking(int fd)
+{
     for (auto &user_status : users_status)
+    {
+        if (user_status.fd_id == fd)
         {
-            if (user_status.fd_id == fd)
-            {
-                user_status.booking_status= true;
-                send_booking_room(fd);
-            }
+            user_status.booking_status = true;
+            send_booking_room(fd);
         }
+    }
 }
 
-void canceling(int fd){
+void canceling(int fd)
+{
     for (auto &user_status : users_status)
+    {
+        if (user_status.fd_id == fd)
         {
-            if (user_status.fd_id == fd)
-            {
-                user_status.canceling_status= true;
-                send_canceling_room(fd);
-            }
+            user_status.canceling_status = true;
+            send_canceling_room(fd);
         }
+    }
 }
 
-void leaving_room(int fd){
+void leaving_room(int fd)
+{
     for (auto &user_status : users_status)
+    {
+        if (user_status.fd_id == fd)
         {
-            if (user_status.fd_id == fd)
-            {
-                user_status.leaving_status= true;
-                send_leaving_room(fd);
-            }
+            user_status.leaving_status = true;
+            send_leaving_room(fd);
         }
+    }
 }
 
-void edit_user(int fd){
+void edit_user(int fd)
+{
     for (auto &user_status : users_status)
+    {
+        if (user_status.fd_id == fd)
         {
-            if (user_status.fd_id == fd)
-            {
-                user_status.edit_status= true;
-                send_edit_user(fd);
-            }
+            user_status.edit_status = true;
+            send_edit_user(fd);
         }
+    }
 }
 
 void handle_menu_commands(std::vector<std::string> values, int fd_id)
@@ -856,38 +865,55 @@ void handle_edit_rooms_commands(std::vector<std::string> values, int fd_id)
     if (values[0] == "add")
     {
         if (values.size() != 4)
+        {
             raise_error(503, fd_id);
+            return;
+        }
         if (is_room_number_exist(values[1]))
+        {
             raise_error(111, fd_id);
+            return;
+        }
         else
         {
             add_new_room(values[1], values[2], values[3], fd_id);
+            return;
         }
     }
     else if (values[0] == "modify")
     {
         if (values.size() != 4)
+        {
             raise_error(503, fd_id);
+            return;
+        }
         if (is_room_number_exist(values[1]))
         {
             modify_room(values[1], values[2], values[3], fd_id);
+            return;
         }
         else
         {
             raise_error(101, fd_id);
+            return;
         }
     }
     else if (values[0] == "remove")
     {
         if (values.size() != 2)
+        {
             raise_error(503, fd_id);
+            return;
+        }
         if (is_room_number_exist(values[1]))
         {
             remove_room(values[1], fd_id);
+            return;
         }
         else
         {
             raise_error(101, fd_id);
+            return;
         }
     }
     else
@@ -900,37 +926,44 @@ void handle_booking_state(std::vector<std::string> values, int fd_id)
 {
     if ((values[0] == "book") && (is_valid_date_time((values[3]))) && (is_valid_date_time((values[4]))))
     {
-        if (!compare_dates(values[3],values[4]))
+        if (!compare_dates(values[3], values[4]))
             raise_error(101, fd_id);
         Room room;
         User user = find_user_by_fd(fd_id);
         if (values.size() != 5)
             raise_error(503, fd_id);
-        if (is_room_number_exist(values[1])){
+        if (is_room_number_exist(values[1]))
+        {
             room = room_by_id(values[1]);
             if (room.status == 1)
                 raise_error(109, fd_id);
-            else {
+            else
+            {
                 if (room.maxCapacity < stoi(values[2]))
                     raise_error(109, fd_id);
-                else{
-                    if ((stoi(values[2]) * room.price) > stoi(user.purse)){
+                else
+                {
+                    if ((stoi(values[2]) * room.price) > stoi(user.purse))
+                    {
                         raise_error(108, fd_id);
                     }
-                    else {
+                    else
+                    {
                         int flag = 0;
-                        for (auto &reservator : room.reservators) {
+                        for (auto &reservator : room.reservators)
+                        {
                             if (compare_dates(values[3], reservator.checkoutDate))
                             {
                                 if (compare_dates(reservator.reserveDate, values[4]))
                                 {
                                     if (room.maxCapacity - reservator.numOfBeds < stoi(values[2]))
-                                    raise_error(109, fd_id);
+                                        raise_error(109, fd_id);
                                     flag = 1;
                                 }
                             }
                         }
-                        if (flag == 0){
+                        if (flag == 0)
+                        {
                             user.purse = std::to_string(stoi(user.purse) - (stoi(values[2]) * room.price));
                             Reservator res;
                             res.id = user.id;
@@ -944,7 +977,7 @@ void handle_booking_state(std::vector<std::string> values, int fd_id)
             }
         }
         else
-        {   
+        {
             raise_error(101, fd_id);
         }
     }
@@ -962,46 +995,57 @@ void handle_canceling_state(std::vector<std::string> values, int fd_id)
         User user = find_user_by_fd(fd_id);
         if (values.size() != 3)
             raise_error(503, fd_id);
-        if (is_room_number_exist(values[1])){
+        if (is_room_number_exist(values[1]))
+        {
             room = room_by_id(values[1]);
-            if(room.maxCapacity < stoi(values[2])){
+            if (room.maxCapacity < stoi(values[2]))
+            {
                 raise_error(102, fd_id);
             }
-            else {
+            else
+            {
                 int flag = 0;
                 int count = 0;
-                for (auto &reservator : room.reservators) {
-                    if (user.id==reservator.id)
+                for (auto &reservator : room.reservators)
+                {
+                    if (user.id == reservator.id)
                     {
                         flag = 1;
-                        if (reservator.numOfBeds < stoi(values[2])){
+                        if (reservator.numOfBeds < stoi(values[2]))
+                        {
                             raise_error(102, fd_id);
                         }
-                        else {
-                            if(compare_dates(reservator.reserveDate, date_time)){
+                        else
+                        {
+                            if (compare_dates(reservator.reserveDate, date_time))
+                            {
                                 raise_error(102, fd_id);
                             }
-                            else{
-                                user.purse += room.price* stoi(values[2])/2;
-                                if (reservator.numOfBeds > stoi(values[2])){
+                            else
+                            {
+                                user.purse += room.price * stoi(values[2]) / 2;
+                                if (reservator.numOfBeds > stoi(values[2]))
+                                {
                                     reservator.numOfBeds -= stoi(values[2]);
                                 }
-                                else {
+                                else
+                                {
                                     room.reservators.erase(room.reservators.begin() + count);
                                 }
                                 raise_error(110, fd_id);
                             }
                         }
                     }
-                count++;
+                    count++;
                 }
-                if (flag == 0){
+                if (flag == 0)
+                {
                     raise_error(101, fd_id);
                 }
             }
         }
         else
-        {   
+        {
             raise_error(101, fd_id);
         }
     }
@@ -1019,30 +1063,35 @@ void handle_leaving_state(std::vector<std::string> values, int fd_id)
         User user = find_user_by_fd(fd_id);
         if (values.size() != 2)
             raise_error(503, fd_id);
-        if (is_room_number_exist(values[1])){
+        if (is_room_number_exist(values[1]))
+        {
             room = room_by_id(values[1]);
             int flag = 0;
             int count = 0;
-            for (auto &reservator : room.reservators) {
-                if (user.id==reservator.id)
+            for (auto &reservator : room.reservators)
+            {
+                if (user.id == reservator.id)
                 {
                     flag = 1;
-                        if(compare_dates(date_time ,reservator.reserveDate)){
-                            raise_error(102, fd_id);
-                        }
-                        else{
-                            room.reservators.erase(room.reservators.begin() + count);
-                            raise_error(110, fd_id);
-                        }
+                    if (compare_dates(date_time, reservator.reserveDate))
+                    {
+                        raise_error(102, fd_id);
+                    }
+                    else
+                    {
+                        room.reservators.erase(room.reservators.begin() + count);
+                        raise_error(110, fd_id);
+                    }
                 }
                 count++;
             }
-            if (flag == 0){
+            if (flag == 0)
+            {
                 raise_error(102, fd_id);
             }
         }
         else
-        {   
+        {
             raise_error(101, fd_id);
         }
     }
@@ -1062,7 +1111,6 @@ void handle_edit_state(std::vector<std::string> values, int fd_id)
     user.address = values[2];
     raise_error(312, fd_id);
 }
-
 
 void handle_commands(std::vector<std::string> values, int fd_id)
 {
@@ -1144,10 +1192,11 @@ void handle_commands(std::vector<std::string> values, int fd_id)
         if (values.size() == 3)
         {
             sign_in(values[1], values[2], fd_id);
-            send_menu(fd_id);
         }
         else
-            raise_error(430, fd_id);
+        {
+            raise_error(503, fd_id);
+        }
     }
     else if (values[0] == "signup")
     {

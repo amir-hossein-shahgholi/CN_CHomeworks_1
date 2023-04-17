@@ -9,7 +9,6 @@
 - [Setup Server](#Setup-server)
 - [Client Side](#Client-side)
 - [List of Errors](#List-of-Errors)
-- [License](#license)
 
 For generating `client.out` and `server.out` files run this command: 
 <pre>
